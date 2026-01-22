@@ -31,3 +31,16 @@ laboratory/
 │   └── ...
 ├── 04-middleware-poc/       # Redis, Docker, K8s experiments
 └── 99-scratchpad/           # Temporary scripts, will be cleaned periodically
+```
+
+## ⚠️ Disclaimer
+
+- **Experimental Code**: Code snippets here may violate best practices (e.g., hardcoded values, lack of error handling) for the sake of simplicity and testing specific behaviors.
+- **No Guarantees**: This repo is for educational purposes. Do not copy-paste code into production without review.
+
+## 🚀 How to Run
+
+Most sub-directories are standalone modules.
+
+- **Java Projects**: Usually managed by Maven/Gradle. Check the pom.xml or build.gradle in specific sub-folders.
+- **Scripts**: Can be run directly via python or bash.
