@@ -1,0 +1,11 @@
+spring:
+  elasticsearch:
+    uris: http://localhost:9200
+    connection-timeout: 3s
+
+logging:
+  level:
+    # 开启 Java API Client 的 TRACE 级别日志
+    co.elastic.clients.json: TRACE
+    # 可选：如果你还想看 HTTP 传输细节（URL、状态码等）
+    co.elastic.clients.transport: TRACE
