@@ -19,6 +19,7 @@ import com.zeuslu.es.basic.entity.EsProduct;
 import com.zeuslu.es.basic.entity.dto.ESRequestParam;
 import com.zeuslu.es.basic.entity.dto.ESResponseResult;
 import com.zeuslu.es.basic.service.TulingMallSearchService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
@@ -30,6 +31,7 @@ import java.util.stream.Collectors;
 
 
 @Service(value = "tulingMallSearchService")
+@Slf4j
 public class TulingMallSearchServiceImpl implements TulingMallSearchService {
 
 
@@ -48,7 +50,7 @@ public class TulingMallSearchServiceImpl implements TulingMallSearchService {
 
             //2、进行检索操作
             SearchResponse response = client.search(searchRequest, EsProduct.class);
-            System.out.println("response:" + response);
+            log.info("response:" + response);
             //3、分析响应数据，封装成指定的格式
             ESResponseResult responseResult = startBuildResponseResult(response, param);
             return responseResult;
@@ -223,11 +225,10 @@ public class TulingMallSearchServiceImpl implements TulingMallSearchService {
 
         searchRequestBuilder.aggregations("attrs_agg", attrs_agg);
 
-        System.out.println("构建的DSL语句:" + searchRequestBuilder.toString());
-
 
         SearchRequest searchRequest = searchRequestBuilder.index(SearchConstant.INDEX_NAME).build();
 
+        log.info("构建的DSL语句:" + searchRequest.toString());
         return searchRequest;
     }
 
