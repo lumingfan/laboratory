@@ -1,0 +1,44 @@
+PUT /products
+{
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "id": {
+          "type": "keyword"
+        },
+        "product_id": {
+          "type": "keyword"
+        },
+        "title": {
+          "type": "text",
+          "analyzer": "ik_max_word",
+          "search_analyzer": "ik_smart"
+        },
+        "brand": {
+          "type": "keyword"
+        },
+        "price": {
+          "type": "long"
+        },
+        "sales_volume": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "boolean"
+        },p
+        "color": {
+          "type": "keyword"
+        },
+        "size": {
+          "type": "keyword"
+        },
+        "stock": {
+          "type": "integer"
+        }
+
+      }
+    }
+}
