@@ -22,4 +22,9 @@ public class ProductConstant {
     public static final String COLLAPSE_HIT_NAME = "skus";
     public  static final Integer COLLAPSE_HIT_SIZE = 3;
 
+
+    public static final String AGG_BRAND_DISTRIBUTION = "brandDistribution";
+    public static final String AGG_PRICE_DISTRIBUTION = "priceDistribution";
+    public static final Double AGG_PRICE_INTERVAL = 100.0;
+
 }

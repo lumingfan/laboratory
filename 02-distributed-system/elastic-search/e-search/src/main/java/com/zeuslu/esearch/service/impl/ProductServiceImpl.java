@@ -2,6 +2,8 @@ package com.zeuslu.esearch.service.impl;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.FieldValueFactorModifier;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
@@ -26,8 +28,10 @@ import com.zeuslu.esearch.util.RetryUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregation;
 import org.springframework.data.elasticsearch.client.elc.ElasticsearchTemplate;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.core.AggregationsContainer;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.retry.RecoveryCallback;
 import org.springframework.retry.RetryCallback;
@@ -37,6 +41,7 @@ import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -196,6 +201,53 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductAnalyticsVo analytics(String keyword) {
-        return null;
-    }
-}
+        Query query = Query.of(q -> q.bool(new BoolQuery.Builder().must(QueryUtil.addMatchIfPresent(ProductConstant.TITLE, keyword)).build()));
+        Aggregation brandAgg = Aggregation.of(agg -> agg.terms(t -> t.field(ProductConstant.BRAND)));
+        Aggregation priceAgg = Aggregation.of(agg -> agg.histogram(t -> t.field(ProductConstant.PRICE).interval(ProductConstant.AGG_PRICE_INTERVAL)));
+
+        log.info("构造的Query字符串: {}, 构造的brandAgg字符串: {}, 构造的priceAgg字符串: {}",
+                JsonpUtils.toJsonString(query, new JacksonJsonpMapper()),
+                JsonpUtils.toJsonString(brandAgg, new JacksonJsonpMapper()),
+                JsonpUtils.toJsonString(priceAgg, new JacksonJsonpMapper()));
+
+
+        NativeQuery nativeQuery = NativeQuery.builder()
+                .withQuery(query)
+                .withAggregation(ProductConstant.AGG_BRAND_DISTRIBUTION, brandAgg)
+                .withAggregation(ProductConstant.AGG_PRICE_DISTRIBUTION, priceAgg).build();
+
+        SearchHits<Product> results = elasticsearchTemplate.search(
+                nativeQuery, Product.class);
+
+        ProductAnalyticsVo productAnalyticsVo = new ProductAnalyticsVo();
+        productAnalyticsVo.setBrandDistribution(new HashMap<>());
+        productAnalyticsVo.setPriceDistribution(new HashMap<>());
+
+        AggregationsContainer<?> container = results.getAggregations();
+        if (container != null && container.aggregations() instanceof List aggregations) {
+            aggregations.stream().forEach(aggregation -> {
+                if (aggregation instanceof ElasticsearchAggregation esAgg) {
+                    if (ProductConstant.AGG_BRAND_DISTRIBUTION.equals(esAgg.aggregation().getName())) {
+                        Aggregate termAgg = esAgg.aggregation().getAggregate();
+                        if (termAgg.isSterms()) {
+                            termAgg.sterms().buckets().array().forEach(bucket -> {
+                                String brand = bucket.key().stringValue();
+                                long count = bucket.docCount();
+                                productAnalyticsVo.getBrandDistribution().put(brand, (int) count);
+                            });
+                        }
+                    } else if (ProductConstant.AGG_PRICE_DISTRIBUTION.equals(esAgg.aggregation().getName())) {
+                        Aggregate histoAgg = esAgg.aggregation().getAggregate();
+                        if (histoAgg.isHistogram()) {
+                            histoAgg.histogram().buckets().array().forEach(bucket -> {
+                                double key = bucket.key();
+                                long count = bucket.docCount();
+                                productAnalyticsVo.getPriceDistribution().put(key, (int) count);
+                            });
+                        }
+                    }
+                }
+            });
+        }
+        return productAnalyticsVo;
+    }}

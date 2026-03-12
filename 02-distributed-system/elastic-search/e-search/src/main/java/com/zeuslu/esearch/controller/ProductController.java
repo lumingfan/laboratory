@@ -27,7 +27,7 @@ public class ProductController {
     }
 
     @GetMapping("/analytics")
-    public ProductAnalyticsVo analytics(@RequestParam(required = false) String keyword) {
+    public ProductAnalyticsVo analytics(@RequestParam(required = false, name = "keyword") String keyword) {
         return productService.analytics(keyword);
     }
 

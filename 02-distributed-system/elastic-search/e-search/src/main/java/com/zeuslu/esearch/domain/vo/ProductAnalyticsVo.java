@@ -11,5 +11,5 @@ import java.util.Map;
 @AllArgsConstructor
 public class ProductAnalyticsVo {
     private Map<String, Integer> brandDistribution;
-    private Map<String, Integer> priceRangeDistribution;
+    private Map<Double, Integer> priceDistribution;
 }
