@@ -28,7 +28,7 @@ PUT /products
         },
         "status": {
           "type": "boolean"
-        },p
+        },
         "color": {
           "type": "keyword"
         },
