@@ -6,13 +6,16 @@ import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.FieldValueFactorModifier;
+import co.elastic.clients.elasticsearch._types.query_dsl.FunctionScore;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.search.FieldCollapse;
+import co.elastic.clients.elasticsearch.core.search.InnerHits;
 import co.elastic.clients.elasticsearch.core.search.SourceConfig;
 import co.elastic.clients.json.JsonpUtils;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.util.ObjectBuilder;
 import com.zeuslu.esearch.constant.ProductConstant;
 import com.zeuslu.esearch.domain.dto.ProductBulkDto;
 import com.zeuslu.esearch.domain.dto.ProductSearchDto;
@@ -44,6 +47,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 @Slf4j
 @Service
@@ -131,38 +135,47 @@ public class ProductServiceImpl implements ProductService {
         Integer maxPrice = productSearchDto.getMaxPrice();
         List<ProductSkuDto> productSkuDtoList = productSearchDto.getProductSkuDtoList();
 
-        BoolQuery boolQuery = new BoolQuery.Builder().filter(
-                        QueryUtil.addTermIfPresent(ProductConstant.BRAND, brand),
-                        QueryUtil.addRangeIfPresent(ProductConstant.PRICE, minPrice, maxPrice),
-                        QueryUtil.addTermIfPresent(ProductConstant.STATUS, ProductConstant.STATUS_AVAILABLE),
-                        Query.of(q -> q.bool(b -> b.should(
-                                        productSkuDtoList.stream().map(
-                                                productSkuDto -> Query.of(sq -> sq.bool(
-                                                        sqb -> sqb.filter(
-                                                                QueryUtil.addTermIfPresent(ProductConstant.COLOR, productSkuDto.getColor()),
-                                                                QueryUtil.addTermIfPresent(ProductConstant.SIZE, productSkuDto.getSize()),
-                                                                QueryUtil.addRangeIfPresent(ProductConstant.STOCK, 1, null)
-                                                        )
-                                                ))).toList()
-                                )
-                        ))
-                ).must(m -> m.functionScore(
-                        fs -> fs.query(QueryUtil.addMatchIfPresent(ProductConstant.TITLE, keyword)).functions (
-                                fsf -> fsf.fieldValueFactor(fsff -> fsff.field(ProductConstant.SALES_VOLUME).modifier(FieldValueFactorModifier.Log1p).missing(1.0))
-                        )
-                )).build();
+        List<Query> shouldQueryList = productSkuDtoList.stream().map(
+                productSkuDto ->  {
+                    List<Query> shouldFilterQuery = new ArrayList<>();
+                    QueryUtil.addQueryIfPresent(shouldFilterQuery, QueryUtil.addTermIfPresent(ProductConstant.COLOR, productSkuDto.getColor()));
+                    QueryUtil.addQueryIfPresent(shouldFilterQuery, QueryUtil.addTermIfPresent(ProductConstant.SIZE, productSkuDto.getSize()));
+                    QueryUtil.addQueryIfPresent(shouldFilterQuery, QueryUtil.addRangeIfPresent(ProductConstant.STOCK, 1, null));
+                    return Query.of(sq -> sq.bool(sqb -> sqb.filter(shouldFilterQuery)));
+                }
+        ).toList();
 
+        List<Query> filterQueryList = new ArrayList<>();
+        QueryUtil.addQueryIfPresent(filterQueryList, QueryUtil.addTermIfPresent(ProductConstant.BRAND, brand));
+        QueryUtil.addQueryIfPresent(filterQueryList, QueryUtil.addRangeIfPresent(ProductConstant.PRICE, minPrice, maxPrice));
+        QueryUtil.addQueryIfPresent(filterQueryList, QueryUtil.addTermIfPresent(ProductConstant.STATUS, ProductConstant.STATUS_AVAILABLE));
+        QueryUtil.addQueryIfPresent(filterQueryList, Query.of(q -> q.bool(b -> b.should(shouldQueryList))));
+
+        List<Query> mustQueryList = new ArrayList<>();
+        Query titleQuery = QueryUtil.addMatchIfPresent(ProductConstant.TITLE, keyword);
+        if (titleQuery != null) {
+            Function<FunctionScore.Builder, ObjectBuilder<FunctionScore>> functionsBuilder = fsf -> fsf.fieldValueFactor(fsff -> fsff
+                    .field(ProductConstant.SALES_VOLUME)
+                    .modifier(FieldValueFactorModifier.Log1p)
+                    .missing(1.0)
+            );
+            Query functionScoreQuery = Query.of(
+                    q -> q.functionScore(fs -> fs.query(titleQuery).functions(functionsBuilder))
+            );
+            mustQueryList.add(functionScoreQuery);
+        }
+
+        BoolQuery boolQuery = new BoolQuery.Builder().filter(filterQueryList).must(mustQueryList).build();
         Query query = Query.of(q -> q.bool(boolQuery));
 
-
+        Function<InnerHits.Builder, ObjectBuilder<InnerHits>> innerHitsBuilder =
+                fci -> fci.name(ProductConstant.COLLAPSE_HIT_NAME)
+                        .size(ProductConstant.COLLAPSE_HIT_SIZE)
+                        .sort(s -> s.field(sf -> sf.field(ProductConstant.PRICE).order(SortOrder.Asc)))
+                        .source(SourceConfig.of(sc -> sc.filter(scf -> scf.includes(ProductConstant.COLOR, ProductConstant.SIZE, ProductConstant.STOCK))));
 
         FieldCollapse fieldCollapse = FieldCollapse.of(
-                fc -> fc.field(ProductConstant.PRODUCT_ID).innerHits(
-                        fci -> fci.name(ProductConstant.COLLAPSE_HIT_NAME)
-                                .size(ProductConstant.COLLAPSE_HIT_SIZE)
-                                .sort(s -> s.field(sf -> sf.field(ProductConstant.PRICE).order(SortOrder.Asc)))
-                                .source(SourceConfig.of(sc -> sc.filter(scf -> scf.includes(ProductConstant.COLOR, ProductConstant.SIZE, ProductConstant.STOCK))))
-                )
+                fc -> fc.field(ProductConstant.PRODUCT_ID).innerHits(innerHitsBuilder)
         );
 
         String queryString = JsonpUtils.toJsonString(query, new JacksonJsonpMapper());
@@ -201,7 +214,9 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductAnalyticsVo analytics(String keyword) {
-        Query query = Query.of(q -> q.bool(new BoolQuery.Builder().must(QueryUtil.addMatchIfPresent(ProductConstant.TITLE, keyword)).build()));
+        List<Query> mustQueryList = new ArrayList<>();
+        QueryUtil.addQueryIfPresent(mustQueryList, QueryUtil.addMatchIfPresent(ProductConstant.TITLE, keyword));
+        Query query = Query.of(q -> q.bool(new BoolQuery.Builder().must(mustQueryList).build()));
         Aggregation brandAgg = Aggregation.of(agg -> agg.terms(t -> t.field(ProductConstant.BRAND)));
         Aggregation priceAgg = Aggregation.of(agg -> agg.histogram(t -> t.field(ProductConstant.PRICE).interval(ProductConstant.AGG_PRICE_INTERVAL)));
 
